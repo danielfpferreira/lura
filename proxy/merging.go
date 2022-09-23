@@ -46,6 +46,10 @@ func NewMergeDataMiddleware(logger logging.Logger, endpointConfig *config.Endpoi
 			return parallelMerge(serviceTimeout, combiner, next...)
 		}
 
+		if endpointConfig.HasDefaultBackend {
+			return customMerge(serviceTimeout, combiner, next...)
+		}
+
 		patterns := make([]string, len(endpointConfig.Backend))
 		for i, b := range endpointConfig.Backend {
 			patterns[i] = b.URLPattern
@@ -64,6 +68,36 @@ func shouldRunSequentialMerger(endpointConfig *config.EndpointConfig) bool {
 		}
 	}
 	return false
+}
+
+func customMerge(timeout time.Duration, rc ResponseCombiner, next ...Proxy) Proxy {
+	return func(ctx context.Context, request *Request) (*Response, error) {
+		localCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+
+		out := make(chan *Response, 1)
+		errCh := make(chan error, 1)
+
+		acc := newIncrementalMergeAccumulator(1, rc)
+
+	TxLoop:
+		for i, n := range next {
+			sequentialRequestPart(localCtx, n, request, out, errCh)
+			select {
+			case err := <-errCh:
+				if len(next) <= i+1 {
+					acc.Merge(nil, err)
+					break TxLoop
+				}
+				continue
+			case response := <-out:
+				acc.Merge(response, nil)
+				break TxLoop
+			}
+		}
+
+		return acc.Result()
+	}
 }
 
 func parallelMerge(timeout time.Duration, rc ResponseCombiner, next ...Proxy) Proxy {

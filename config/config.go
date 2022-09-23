@@ -200,6 +200,8 @@ type EndpointConfig struct {
 	Endpoint string `mapstructure:"endpoint"`
 	// HTTP method of the endpoint (GET, POST, PUT, etc)
 	Method string `mapstructure:"method"`
+	// flag that indicates if the first backend should be used as default
+	HasDefaultBackend bool `mapstructure:"has_default_backend"`
 	// set of definitions of the backends to be linked to this endpoint
 	Backend []*Backend `mapstructure:"backend"`
 	// number of concurrent calls this endpoint must send to the backends
